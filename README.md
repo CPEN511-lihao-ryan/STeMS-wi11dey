@@ -20,31 +20,17 @@ $ ./build_champsim.sh ${BRANCH} ${L1D_PREFETCHER} ${L2C_PREFETCHER} ${LLC_REPLAC
 
 # Run simulation
 
-Copy `scripts/run_champsim.sh` to the ChampSim root directory and change `TRACE_DIR` in `run_champsim.sh` <br>
+Run the prefetcher binary, which will be in `bin` and named `${BRANCH}-${L1D_PREFETCHER}-${L2C_PREFETCHER}-${LLC_REPLACEMENT}-${NUM_CORE}core`
 
-* Single-core simulation: Run simulation with `run_champsim.sh` script.
+The only required option is `-traces` (single dash) to provide a gzipped trace file.
 
-```
-$ ./run_champsim.sh bimodal-no-no-lru-1core 1 10 bzip2_183B
-
-$ ./run_champsim.sh ${binary} ${n_warm} ${n_sim} ${trace} ${option}
-
-${binary}: ChampSim binary compiled by "build_champsim.sh" (bimodal-no-no-lru-1core)
-${n_warm}: number of instructions for warmup (1 million)
-${n_sim}:  number of instructinos for detailed simulation (10 million)
-${trace}: trace name (bzip2)
-${option}: extra option for "-low_bandwidth" (src/main.cc)
-```
-Simulation results will be stored under "results_${n_sim}M" as a form of "${trace}-${binary}-${option}.txt".<br> 
-
-* Multi-core simulation: Run simulation with `run_4core.sh` or `run_8core.sh`. <br>
-Note that `${trace}` is replaced with `${num}` that represents a unique ID for randomly mixed multi-programmed workloads. 
+A gzipped trace file is included in the releases, or traces can be converted from the DPC3 traces (xz) with the command
 
 ```
-$ ./run_4core.sh ${binary} ${n_warm} ${n_sim} ${num} ${option}
-
-${num}: mix number is the corresponding line number written in sim_list/4core_workloads.txt
+$ xz -dkc -T ${NUM_THREADS_DECOMPRESSION} ${XZ_INPUT_TRACE_FILE} | gzip > ${GZ_OUTPUT_TRACE_FILE}
 ```
+
+DPC3 trace are available (kindly hosted by Mike Ferdman of Stony Brook University) at the [DPC3 website](https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/).
 
 # Add your own branch predictor, data prefetchers, and replacement policy
 **Copy an empty template**

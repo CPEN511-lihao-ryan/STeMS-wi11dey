@@ -3,6 +3,7 @@
  */
 
 #include "rmob.h"
+#include <stdexcept>
 
 namespace stems {
 namespace tms {
