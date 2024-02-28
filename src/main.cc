@@ -15,8 +15,8 @@ uint8_t warmup_complete[NUM_CPUS],
 uint64_t warmup_instructions     = 100000,
          simulation_instructions = 1000000;
 #else
-uint64_t warmup_instructions     = 1000000,
-         simulation_instructions = 10000000;
+uint64_t warmup_instructions     = 50000000,
+         simulation_instructions = 200000000;
 #endif
 time_t start_time;
 uint64_t champsim_seed;
