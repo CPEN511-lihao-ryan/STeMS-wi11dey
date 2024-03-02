@@ -816,8 +816,12 @@ int main(int argc, char** argv)
             }
 
             // check for deadlock
-            if (ooo_cpu[i].ROB.entry[ooo_cpu[i].ROB.head].ip && (ooo_cpu[i].ROB.entry[ooo_cpu[i].ROB.head].event_cycle + DEADLOCK_CYCLE) <= current_core_cycle[i])
+            if (ooo_cpu[i].ROB.entry[ooo_cpu[i].ROB.head].ip && (ooo_cpu[i].ROB.entry[ooo_cpu[i].ROB.head].event_cycle + DEADLOCK_CYCLE) <= current_core_cycle[i]) {
+                cout << "rob head ip: " << ooo_cpu[i].ROB.entry[ooo_cpu[i].ROB.head].ip << endl;
+                cout << "rob head event cycle: " << ooo_cpu[i].ROB.entry[ooo_cpu[i].ROB.head].event_cycle << endl;
+                cout << "current core cycle: " << current_core_cycle[i] << endl;
                 print_deadlock(i);
+            }
 
             // check for warmup
             // warmup complete
