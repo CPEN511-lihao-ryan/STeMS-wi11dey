@@ -279,6 +279,7 @@ void print_deadlock(uint32_t i)
         cout << " address: " << hex << queue->entry[j].address << " full_addr: " << queue->entry[j].full_addr << dec << " type: " << +queue->entry[j].type;
         cout << " fill_level: " << queue->entry[j].fill_level << " lq_index: " << queue->entry[j].lq_index << " sq_index: " << queue->entry[j].sq_index << endl; 
     }
+    cout << "[" << queue->NAME << "] head, tail, occupancy " << queue->head << ", " << queue->tail << ", " << queue->occupancy << endl;
 
     assert(0);
 }
