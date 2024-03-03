@@ -14,6 +14,7 @@ import datetime
 import uuid
 from shutil import copyfile, rmtree
 from typing import List
+import re
 
 default_output_dir = "simulation-results"
 
@@ -24,13 +25,39 @@ def parse_arguments():
         description="Run a ChampSim simulation and save the results"
     )
     parser.add_argument(
-        "--config",
-        "-c",
-        metavar="champsim_config.json",
-        default="champsim_config.json",
-        nargs="?",
-        dest="config",
-        help="Configuration file to pass to ChampSim.",
+        "--predictor",
+        required=False,
+        metavar="branch_predictor",
+        default="hashed_perceptron",
+        help="Branch predictor to use."
+    )
+    parser.add_argument(
+        "--l1d",
+        metavar="l1d_prefetcher",
+        required=False,
+        default="no",
+        help="L1D prefetcher to use."
+    )
+    parser.add_argument(
+        "--l2c",
+        metavar="l2c_prefetcher",
+        required=False,
+        default="no",
+        help="L2C prefetcher to use."
+    )
+    parser.add_argument(
+        "--llc-replacement",
+        metavar="llc_replacement",
+        required=False,
+        default="lru",
+        help="LLC replacement policy to use."
+    )
+    parser.add_argument(
+        "--cores",
+        metavar="num_cores",
+        required=False,
+        type=int,
+        default=1
     )
     """parser.add_argument(
         "--daemonize",
@@ -47,11 +74,11 @@ def parse_arguments():
         help="Print less output to the console.",
     )
     parser.add_argument(
-        "--skip-make",
+        "--force-build",
         required=False,
         action="store_true",
-        dest="skip_make",
-        help="Skip the make process. Useful if you've already built and configured ChampSim for this configuration.",
+        dest="force_build",
+        help="Force rebuilding the simulator, even if there already exists a binary for it.",
     )
     parser.add_argument(
         "--output",
@@ -61,24 +88,6 @@ def parse_arguments():
         nargs="?",
         dest="output",
         help="Output directory to save the results.",
-    )
-    parser.add_argument(
-        "--warmup-instructions",
-        "-w",
-        metavar="instructions",
-        default=50000000,
-        type=int,
-        dest="warmup",
-        help="The number of instructions in the warmup phase.",
-    )
-    parser.add_argument(
-        "--simulation-instructions",
-        "-s",
-        metavar="instructions",
-        default=200000000,
-        type=int,
-        dest="sim",
-        help="The number of instructions in the warmup phase.",
     )
     parser.add_argument(
         "--trace",
@@ -104,7 +113,7 @@ def parse_arguments():
 
 
 def create_directory(
-    output_dir: pathlib.Path, trace_path: pathlib.Path, prefetcher: str, dry_run=False
+    output_dir: pathlib.Path, trace_num: int, instr_offset: int, binary_name: str, dry_run=False
 ):
     # Create output directory
     if not output_dir.exists():
@@ -114,10 +123,8 @@ def create_directory(
     now = datetime.datetime.now(datetime.timezone.utc)
     now_str = now.isoformat(timespec="seconds").replace(":", "").replace("+0000", "Z")
 
-    trace_name = trace_path.stem
-
     # Construct results directory
-    results_dir = now_str + "_" + trace_name + "_" + prefetcher
+    results_dir = now_str + "_" + binary_name + "_" + str(trace_num) + "-" + str(instr_offset)
     results_path = output_dir / results_dir
     if (not results_path.exists()) and (not dry_run):
         results_path.mkdir()
@@ -126,19 +133,19 @@ def create_directory(
 
 def run_simulation(
     trace_path: List[pathlib.Path],
-    config_path: pathlib.Path,
     output_dir: pathlib.Path,
-    prefetcher: str,
-    warmup_instructions: int,
-    simulation_instructions: int,
+    binary_name: str,
     run_id: str,
     daemonize: bool = True,
     quiet: bool = False,
 ):
+    first_trace_filename = trace_path[0].name
+    first_trace_num = int(re.match(r"^\d{3}", first_trace_filename).group(0))
+    first_trace_instr_offset = int(re.search(r"(?<=-)\d+(?=B\.champsimtrace)", first_trace_filename).group(0))
+
     # Create output directory
     results_path = create_directory(
-        output_dir=output_dir, trace_path=trace_path[0], prefetcher=prefetcher
-    )
+        output_dir=output_dir, trace_num=first_trace_num, instr_offset=first_trace_instr_offset, binary_name=binary_name)
 
     if not quiet:
         print(
@@ -146,24 +153,14 @@ def run_simulation(
             + str(results_path.absolute().resolve())
         )
 
-    # Copy config file over
-    copyfile(config_path, results_path / "champsim_config.json")
-
     # Generate run command
     cmd = [
-        str(pathlib.Path("bin/champsim").resolve()),
-        "--warmup-instructions",
-        str(warmup_instructions),
-        "--simulation-instructions",
-        str(simulation_instructions),
-        "--json",
-        str((results_path / "simulation_results.json").resolve()),
-        # " >> ",
-        # str((results_path / "sim_output.log").resolve()),
+        str((pathlib.Path("bin")/binary_name).resolve())
     ]
 
     # Add the trace files to the command
     for trace in trace_path:
+        cmd.append("-traces")
         cmd.append(str(trace.resolve()))
 
     if not quiet:
@@ -178,11 +175,6 @@ def run_simulation(
             ).stdout.strip()
         )
 
-    # Compute checksum of the configuration file
-    config_checksum = subprocess.run(
-        ["sha256sum", str(config_path)], capture_output=True, text=True, check=True
-    ).stdout.strip()
-
     # Get current git commit
     git_commit = subprocess.run(
         ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
@@ -195,7 +187,7 @@ def run_simulation(
                 "trace_path": [str(trace) for trace in trace_path],
                 "trace_checksum": trace_checksums,
                 "git_commit": git_commit,
-                "prefetcher": prefetcher,
+                "binary_name": binary_name,
                 "run_id": run_id,
                 "sim_id": uuid.uuid4().hex,
                 "run_datetime": datetime.datetime.now(datetime.timezone.utc).isoformat(
@@ -253,7 +245,7 @@ def main():
                     "Each line in the tracelist file must have the same number of traces."
                 )
     else:
-        tracelist: List[List[str]] = args.trace
+        tracelist: List[List[str]] = [args.trace]
 
     tracepaths = [[pathlib.Path(trace) for trace in traces] for traces in tracelist]
     # print(tracepaths)
@@ -261,37 +253,20 @@ def main():
     # Generate a unique ID for this run
     run_id: str = uuid.uuid4().hex
 
-    # Save the configuration file in a temporary folder
-    temp_path = pathlib.Path("temp_" + run_id)
-    if not temp_path.exists():
-        temp_path.mkdir()
-    else:
-        raise FileExistsError(
-            "Temporary directory already exists! This should not occur since we're using UUIDs. Exiting!"
-        )
-    config_path = temp_path / "champsim_config.json"
-    copyfile(args.config, config_path)
-
-    # Parse the configuration file
-    with open(config_path, "r") as f:
-        config_parsed = json.load(f)
-
-    l1d_prefetcher = config_parsed["L1D"]["prefetcher"]
-    l2c_prefetcher = config_parsed["L2C"]["prefetcher"]
-
-    prefetcher = l1d_prefetcher if l1d_prefetcher != "no" else l2c_prefetcher
-    num_cores = int(config_parsed["num_cores"])
+    binary_name = args.predictor + "-" + args.l1d + "-" + args.l2c + "-" + args.llc_replacement + "-" + str(args.cores) + "core"
     
     # Validate that the number of traces is equal to the number of cores or one
-    if (len(tracepaths[0]) != 1 and len(tracepaths[0]) != num_cores):
+    if (len(tracepaths[0]) != 1 and len(tracepaths[0]) != args.cores):
+        print("len(tracepaths): ", str(len(tracepaths)))
+        print(tracepaths)
         raise ValueError(
             "The number of traces must be equal to the number of cores or one."
         )
     
     # If the number of traces is one, then we need to duplicate the trace for each core
-    if (len(tracepaths[0]) == 1 and num_cores > 1):
+    if (len(tracepaths[0]) == 1 and args.cores > 1):
         for i in range(len(tracepaths)):
-            for j in range(num_cores - 1):
+            for j in range(args.cores - 1):
                 tracepaths[i].append(tracepaths[i][0])
     
     # print(tracepaths)
@@ -299,43 +274,28 @@ def main():
     output_dir = pathlib.Path(args.output)
 
     # Configure and make ChampSim
-    if not args.skip_make:
-        configure_process = subprocess.run(
-            ["./config.sh", str(config_path.resolve())],
+    if (not (pathlib.Path("bin") / binary_name).exists()) or args.force_build:
+        build_process = subprocess.run(
+            ["./build_champsim.sh", args.predictor, args.l1d, args.l2c, args.llc_replacement, str(args.cores)],
             capture_output=True,
             text=True,
             check=True,
         )
         if not (args.quiet):
-            print("ChampSim configured. Printing STDOUT of ./config.sh")
-            print(configure_process.stdout)
-            print("\nPrinting STDERR of ./config.sh")
-            print(configure_process.stderr)
-            print("\n")
-
-        make_process = subprocess.run(
-            ["make", "-j", "28"], capture_output=True, text=True, check=True
-        )
-        if not (args.quiet):
-            print("ChampSim built. Printing STDOUT of make")
-            print(make_process.stdout)
-            print("\nPrinting STDERR of make")
-            print(make_process.stderr)
+            print("ChampSim built. Printing STDOUT of ./build_champsim.sh")
+            print(build_process.stdout)
+            print("\nPrinting STDERR of ./build_champsim.sh")
+            print(build_process.stderr)
             print("\n")
 
     # Run the simulations
     for tracepath in tracepaths:
         run_simulation(
             trace_path=tracepath,
-            config_path=config_path,
+            binary_name=binary_name,
             output_dir=output_dir,
-            prefetcher=prefetcher,
             run_id=run_id,
-            warmup_instructions=args.warmup,
-            simulation_instructions=args.sim,
         )
-
-    rmtree(temp_path)
 
 
 if __name__ == "__main__":
