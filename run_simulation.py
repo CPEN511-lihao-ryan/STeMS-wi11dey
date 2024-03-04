@@ -159,8 +159,8 @@ def run_simulation(
     ]
 
     # Add the trace files to the command
+    cmd.append("-traces")
     for trace in trace_path:
-        cmd.append("-traces")
         cmd.append(str(trace.resolve()))
 
     if not quiet:
